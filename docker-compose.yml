@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # PostgreSQL
+  db:
+    image: postgres:17.2
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: coffeemachine
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - coffeemachine-network
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "postgres", "-d", "coffeemachine" ]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
+
+  # Flyway
+  flyway:
+    image: flyway/flyway:11.3.1
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:5432/coffeemachine
+      FLYWAY_USER: postgres
+      FLYWAY_PASSWORD: password
+      FLYWAY_LOCATIONS: classpath:db/migration
+    command: migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - coffeemachine-network
+    healthcheck:
+      test: [ "CMD", "flyway", "info", "-url=jdbc:postgresql://db:5432/coffeemachine", "-user=postgres", "-password=password" ]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
+    volumes:
+      - ./src/main/resources/db/migration:/flyway/sql
+
+  # Spring Boot
+  app:
+    build: .
+    depends_on:
+      flyway:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    networks:
+      - coffeemachine-network
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/coffeemachine
+      - SPRING_DATASOURCE_USERNAME=postgres
+      - SPRING_DATASOURCE_PASSWORD=password
+
+networks:
+  coffeemachine-network:
+    driver: bridge
+
+volumes:
+  db_data:
